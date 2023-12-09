@@ -5,6 +5,7 @@ Exports an experiment to a directory.
 import os
 import click
 import mlflow
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from mlflow_export_import.common.click_options import (
     opt_experiment_name,
@@ -12,7 +13,8 @@ from mlflow_export_import.common.click_options import (
     opt_import_source_tags,
     opt_import_permissions,
     opt_use_src_user_id,
-    opt_dst_notebook_dir
+    opt_dst_notebook_dir,
+    opt_use_threads
 )
 from mlflow_export_import.client.http_client import create_dbx_client
 from mlflow_export_import.common import utils, mlflow_utils, io_utils
@@ -34,7 +36,8 @@ def import_experiment(
         import_permissions = False,
         use_src_user_id = False,
         dst_notebook_dir = None,
-        mlflow_client = None
+        mlflow_client = None,
+        use_threads = False
     ):
     """
     :param experiment_name: Destination experiment name.
@@ -79,6 +82,9 @@ def import_experiment(
     _logger.info(f"Importing {len(run_ids)} runs into experiment '{experiment_name}' from '{input_dir}'")
     run_ids_map = {}
     run_info_map = {}
+    futures = []
+
+    """
     for src_run_id in run_ids:
         dst_run, src_parent_run_id = import_run(
             mlflow_client = mlflow_client,
@@ -91,6 +97,40 @@ def import_experiment(
         dst_run_id = dst_run.info.run_id
         run_ids_map[src_run_id] = { "dst_run_id": dst_run_id, "src_parent_run_id": src_parent_run_id }
         run_info_map[src_run_id] = dst_run.info
+    """
+
+    # Use ThreadPoolExecutor for parallel execution
+    if use_threads:
+        max_workers = utils.get_threads(use_threads)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for src_run_id in run_ids:
+                future = executor.submit(
+                    import_run,
+                    mlflow_client=mlflow_client,
+                    experiment_name=experiment_name,
+                    input_dir=os.path.join(input_dir, src_run_id),
+                    dst_notebook_dir=dst_notebook_dir,
+                    import_source_tags=import_source_tags,
+                    use_src_user_id=use_src_user_id
+                )
+                futures.append((src_run_id, future))
+
+        for future in as_completed(futures):
+            src_run_id, dst_run_info = future.result()
+            run_info_map[src_run_id] = dst_run_info
+    else:
+        # Sequential execution
+        for src_run_id in run_ids:
+            dst_run, _ = import_run(
+                mlflow_client=mlflow_client,
+                experiment_name=experiment_name,
+                input_dir=os.path.join(input_dir, src_run_id),
+                dst_notebook_dir=dst_notebook_dir,
+                import_source_tags=import_source_tags,
+                use_src_user_id=use_src_user_id
+            )
+            run_info_map[src_run_id] = dst_run.info
+
     _logger.info(f"Imported {len(run_ids)} runs into experiment '{experiment_name}' from '{input_dir}'")
     if len(failed_run_ids) > 0:
         _logger.warning(f"{len(failed_run_ids)} failed runs were not imported - see '{path}'")
@@ -106,8 +146,8 @@ def import_experiment(
 @opt_import_source_tags
 @opt_use_src_user_id
 @opt_dst_notebook_dir
-
-def main(input_dir, experiment_name, import_source_tags, use_src_user_id, dst_notebook_dir, import_permissions):
+@opt_use_threads
+def main(input_dir, experiment_name, import_source_tags, use_src_user_id, dst_notebook_dir, import_permissions,use_threads):
     _logger.info("Options:")
     for k,v in locals().items():
         _logger.info(f"  {k}: {v}")
@@ -117,7 +157,8 @@ def main(input_dir, experiment_name, import_source_tags, use_src_user_id, dst_no
         import_source_tags = import_source_tags,
         import_permissions = import_permissions,
         use_src_user_id = use_src_user_id,
-        dst_notebook_dir = dst_notebook_dir
+        dst_notebook_dir = dst_notebook_dir,
+        use_threads = use_threads
     )
 
 

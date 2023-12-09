@@ -94,7 +94,7 @@ class HttpClient(BaseHttpClient):
                 http_status_code=401
             )
         self.host = host
-        self.api_uri = os.path.join(host, api_name)
+        self.api_uri = os.path.join(host, api_name).replace("\\","/")
         self.token = token
 
 
@@ -172,7 +172,7 @@ class HttpClient(BaseHttpClient):
         return json.dumps(data) if data else None
 
     def _mk_headers(self):
-        headers = { "User-Agent": USER_AGENT }
+        headers = {"User-Agent": USER_AGENT, "Content-Type": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return headers

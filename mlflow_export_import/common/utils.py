@@ -100,13 +100,24 @@ def get_user_id():
 def nested_tags(dst_client, run_ids_mapping):
     """
     Set the new parentRunId for new imported child runs.
+
+    Parameters:
+    dst_client: The client used to set tags in the destination.
+    run_ids_mapping: A dictionary where each value is another dictionary containing
+                     'src_parent_run_id' (original parent id of the run) and
+                     'dst_run_id' (the run which needs to be assigned a new parent id).
+
     """
     for _,v in run_ids_mapping.items():
         src_parent_run_id = v.get("src_parent_run_id",None)
         if src_parent_run_id:
             dst_run_id = v["dst_run_id"]
-            dst_parent_run_id = run_ids_mapping[src_parent_run_id]["dst_run_id"]
-            dst_client.set_tag(dst_run_id, "mlflow.parentRunId", dst_parent_run_id)
+            try:
+                dst_parent_run_id = run_ids_mapping[src_parent_run_id]["dst_run_id"]
+                dst_client.set_tag(dst_run_id, "mlflow.parentRunId", dst_parent_run_id)
+            except Exception as e:
+                # Enhanced error handling
+                print(f"An error occurred while translating parent id: {src_parent_run_id} for destination run: {dst_run_id}. Error: {e}")
 
 
 def show_table(title, lst, columns):
@@ -121,4 +132,4 @@ def get_user():
 
 
 def get_threads(use_threads=False):
-    return os.cpu_count() or 4 if use_threads else 1
+    return os.cpu_count() * 2 or 4 if use_threads else 1
