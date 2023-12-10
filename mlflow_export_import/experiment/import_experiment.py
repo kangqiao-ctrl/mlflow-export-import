@@ -82,46 +82,14 @@ def import_experiment(
     _logger.info(f"Importing {len(run_ids)} runs into experiment '{experiment_name}' from '{input_dir}'")
     run_ids_map = {}
     run_info_map = {}
+
     futures = []
-
-    """
-    for src_run_id in run_ids:
-        dst_run, src_parent_run_id = import_run(
-            mlflow_client = mlflow_client,
-            experiment_name = experiment_name,
-            input_dir = os.path.join(input_dir, src_run_id),
-            dst_notebook_dir = dst_notebook_dir,
-            import_source_tags = import_source_tags,
-            use_src_user_id = use_src_user_id
-        )
-        dst_run_id = dst_run.info.run_id
-        run_ids_map[src_run_id] = { "dst_run_id": dst_run_id, "src_parent_run_id": src_parent_run_id }
-        run_info_map[src_run_id] = dst_run.info
-    """
-
     # Use ThreadPoolExecutor for parallel execution
-    if use_threads:
-        max_workers = utils.get_threads(use_threads)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            for src_run_id in run_ids:
-                future = executor.submit(
-                    import_run,
-                    mlflow_client=mlflow_client,
-                    experiment_name=experiment_name,
-                    input_dir=os.path.join(input_dir, src_run_id),
-                    dst_notebook_dir=dst_notebook_dir,
-                    import_source_tags=import_source_tags,
-                    use_src_user_id=use_src_user_id
-                )
-                futures.append((src_run_id, future))
-
-        for future in as_completed(futures):
-            src_run_id, dst_run_info = future.result()
-            run_info_map[src_run_id] = dst_run_info
-    else:
-        # Sequential execution
+    max_workers = utils.get_threads(use_threads)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for src_run_id in run_ids:
-            dst_run, _ = import_run(
+            future = executor.submit(
+                import_run,
                 mlflow_client=mlflow_client,
                 experiment_name=experiment_name,
                 input_dir=os.path.join(input_dir, src_run_id),
@@ -129,7 +97,14 @@ def import_experiment(
                 import_source_tags=import_source_tags,
                 use_src_user_id=use_src_user_id
             )
-            run_info_map[src_run_id] = dst_run.info
+            futures.append((src_run_id, future))
+
+    # Materialize the futures
+    for src_run_id, future in futures:
+        dst_run, src_parent_run_id = future.result()
+        dst_run_id = dst_run.info.run_id
+        run_ids_map[src_run_id] = { "dst_run_id": dst_run_id, "src_parent_run_id": src_parent_run_id }
+        run_info_map[src_run_id] = dst_run.info
 
     _logger.info(f"Imported {len(run_ids)} runs into experiment '{experiment_name}' from '{input_dir}'")
     if len(failed_run_ids) > 0:
