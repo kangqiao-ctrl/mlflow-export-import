@@ -132,4 +132,4 @@ def get_user():
 
 
 def get_threads(use_threads=False):
-    return os.cpu_count() * 2 or 4 if use_threads else 1
+    return os.cpu_count()//2 or 4 if use_threads else 1
